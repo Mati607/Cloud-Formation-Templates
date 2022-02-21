@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWSCloudFormationTemplates/security/GuardDuty sets Amazon GuardDuty.
+
+Metadata: 
+  AWS::CloudFormation::Interface:
+    ParameterGroups: 
+      - Label: 
+          default: 'Notification Configuration'
+        Parameters: 
+          - SnsTopicARN
+
+Parameters:
+  SnsTopicARN:
+    Type: String
+    AllowedPattern: .+
+
+Resources:
+  # Service-linked Role
+  ServiceLinkedRoleForGuardDuty:
+    Type: AWS::IAM::ServiceLinkedRole
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
+    Properties: 
+      AWSServiceName: guardduty.amazonaws.com
+      Description: A service-linked role required for Amazon GuardDuty to access your resources.
+  # GuardDuty
+  GuardDutyDetector:
+    DependsOn:
+      - ServiceLinkedRoleForGuardDuty
+    Type: AWS::GuardDuty::Detector
+    Properties:
+      Enable: true
+  # EventBridge for GuardDuty
+  CloudWatchEventsForGuardDuty:
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: !Sub Rule for GuardDuty created by ${AWS::StackName}.
+      # MEDIUM or higher
+      # https://github.com/aws-cloudformation/aws-cloudformation-coverage-roadmap/issues/251
+      EventPattern: |
+        {
+           "source": [
+              "aws.guardduty"
+           ],
+           "detail-type": [
+              "GuardDuty Finding"
+           ],
+           "detail": {
+              "severity": [
+                 { "numeric": [ ">=", 4 ] }
+              ]
+           }
+        }
+      Name: GuardDuty
+      State: ENABLED
+      Targets:
+        - Arn: !Ref SnsTopicARN
+          Id: CloudWatchEventsForGuardDuty
